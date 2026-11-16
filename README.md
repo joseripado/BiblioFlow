@@ -1,48 +1,62 @@
 # BiblioFlow
 
-BiblioFlow is a library-management MVP designed around the Supabase-first architecture described in the project brief: three independent clients (web, Android, desktop) share the same PostgreSQL database and auth layer, with the security model enforced in the database via Row Level Security, triggers, and transactional SQL functions.
+BiblioFlow is a Supabase-first library-management project. Its clients are intended to connect directly to Supabase Auth and Postgres; security and circulation rules are enforced in the database, not in an intermediate application backend.
 
 ## Repository status
 
-This repository currently contains the database migration scaffold and documentation required to start the Supabase implementation. The project is intentionally structured so the database schema, access control, and business rules are defined in versioned SQL migrations instead of application-specific backends.
+The database schema, RLS policies, circulation RPCs, and scheduled maintenance migrations are prepared for Supabase CLI. Web, Android, and desktop applications are not yet present in this repository.
 
-## Architecture
+## Database source of truth
 
-- Web: React + TypeScript + Vite
-- Android: Kotlin + Jetpack Compose
-- Desktop: .NET 8 + WPF
-- Shared services: Supabase Auth + Postgres + Row Level Security
-- Direct client-to-Supabase communication only
+`supabase/migrations/` is the only maintained and deployable migration source. The original files formerly under `database/migrations/` were moved into this timestamped directory so that there are no duplicate SQL copies to drift.
 
-## Database migration sequence
+Migration order:
 
-- `001_create_enums.sql`: database enums for role, status, and domain values
-- `002_create_tables.sql`: core tables for profiles, books, copies, loans, reservations, sanctions, and metadata
-- `003_auth_triggers.sql`: profile creation trigger for `auth.users`
-- `004_rls_policies.sql`: row-level security for authenticated clients
-- `005_business_logic.sql`: transactional rules, RPCs, and maintenance functions
-- `006_cron_jobs.sql`: daily maintenance scheduling via `pg_cron`
+1. `20261116164500_create_enums.sql`
+2. `20261116164501_create_tables.sql`
+3. `20261116164502_auth_triggers.sql`
+4. `20261116164503_rls_policies.sql`
+5. `20261116164504_business_logic.sql`
+6. `20261116164505_cron_jobs.sql`
 
-## Quick start
+`supabase/seed.sql` intentionally contains no sample users or catalog data. SQL contract tests are in `supabase/tests/`.
 
-1. Create or connect a Supabase project.
-2. Apply migrations in order using the Supabase CLI or SQL runner:
-   - `supabase db push`
-   - or run each migration file in the listed sequence.
-3. Configure the relevant client environment variables.
-4. Use the security documentation and migration specs as the source of truth for access rules.
+## Local development and validation
 
-## Operational notes
+Requirements: Supabase CLI and Docker.
 
-- No secrets or service-role credentials are stored in this repository.
-- Client apps must never be trusted to enforce business rules.
-- The database is the source of truth for permissions, validation, and daily maintenance tasks.
+```sh
+npx --yes supabase@3.1.0 start
+npx --yes supabase@3.1.0 test db
+npx --yes supabase@3.1.0 status
+```
 
-## Documentation
+The local database is configured for PostgreSQL 17. Local validation does not deploy to or link to a hosted project.
 
-- `docs/SECURITY.md`: RLS model and policy overview
-- `PROGRESS.md`: project status and next steps
+## Remote deployment
 
-## Current MVP goal
+Read [docs/DEPLOYMENT_AUDIT.md](docs/DEPLOYMENT_AUDIT.md) before deployment. Link and inspect the target first; do not push until any existing remote schema and migration history have been reconciled.
 
-The project is positioned to move from architecture/design into a serviceable implementation once a Supabase instance is available. The database layer is organized to support the required roles, catalog, circulation, reservations, and sanctions flow without creating a separate application backend.
+```sh
+npx --yes supabase@3.1.0 login
+npx --yes supabase@3.1.0 link --project-ref <PROJECT_REF>
+npx --yes supabase@3.1.0 migration list --remote
+npx --yes supabase@3.1.0 db push --remote --dry-run
+```
+
+Only after reviewing the target, migration diff, and backup/recovery plan:
+
+```sh
+npx --yes supabase@3.1.0 db push --remote
+```
+
+No hosted project is linked or modified by this repository setup.
+
+## Security notes
+
+- Never put a Supabase service-role key in a client app.
+- The `.env.example` file contains names only; supply real client values outside Git.
+- Members cannot directly mutate loans, reservation state, sanctions, or privileged profile fields.
+- Role changes are handled by a database RPC restricted to active admins.
+
+See [docs/SECURITY.md](docs/SECURITY.md) for the database security model and [docs/DEPLOYMENT_AUDIT.md](docs/DEPLOYMENT_AUDIT.md) for findings and deployment prerequisites.

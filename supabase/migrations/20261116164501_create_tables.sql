@@ -1,9 +1,7 @@
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-
 CREATE TABLE public.profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-    full_name TEXT NOT NULL,
-    email TEXT NOT NULL UNIQUE,
+    full_name TEXT NOT NULL DEFAULT 'Member' CHECK (full_name <> ''),
+    email TEXT UNIQUE,
     role public.profile_role NOT NULL DEFAULT 'member',
     status public.profile_status NOT NULL DEFAULT 'active',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -38,7 +36,8 @@ CREATE TABLE public.copies (
     status public.copy_status NOT NULL DEFAULT 'available',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CHECK (location <> '')
+    CHECK (location <> ''),
+    UNIQUE (id, book_id)
 );
 
 CREATE TABLE public.loans (
@@ -53,11 +52,14 @@ CREATE TABLE public.loans (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CHECK (due_date >= loan_date),
-    CHECK (return_date IS NULL OR return_date >= loan_date)
+    CHECK (return_date IS NULL OR return_date >= loan_date),
+    CHECK ((status = 'returned') = (return_date IS NOT NULL)),
+    UNIQUE (id, user_id)
 );
 
 CREATE TABLE public.reservations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    queue_sequence BIGINT GENERATED ALWAYS AS IDENTITY UNIQUE,
     user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
     book_id UUID NOT NULL REFERENCES public.books(id) ON DELETE CASCADE,
     copy_id UUID REFERENCES public.copies(id) ON DELETE SET NULL,
@@ -66,49 +68,49 @@ CREATE TABLE public.reservations (
     status public.reservation_status NOT NULL DEFAULT 'pending',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CHECK (pickup_deadline IS NULL OR pickup_deadline >= requested_at)
+    CHECK (pickup_deadline IS NULL OR pickup_deadline >= requested_at),
+    CHECK (
+        (status = 'pending' AND copy_id IS NULL AND pickup_deadline IS NULL)
+        OR (status = 'ready_for_pickup' AND copy_id IS NOT NULL AND pickup_deadline IS NOT NULL)
+        OR status IN ('completed', 'expired', 'cancelled')
+    ),
+    FOREIGN KEY (copy_id, book_id)
+        REFERENCES public.copies (id, book_id)
+        ON DELETE SET NULL (copy_id)
 );
 
 CREATE TABLE public.sanctions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-    loan_id UUID NOT NULL REFERENCES public.loans(id) ON DELETE CASCADE,
+    loan_id UUID NOT NULL,
     start_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     end_date TIMESTAMPTZ NOT NULL,
     reason TEXT NOT NULL,
     status public.sanction_status NOT NULL DEFAULT 'active',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CHECK (end_date >= start_date)
+    CHECK (end_date >= start_date),
+    FOREIGN KEY (loan_id, user_id)
+        REFERENCES public.loans (id, user_id)
+        ON DELETE CASCADE
 );
 
 CREATE INDEX idx_profiles_role_status ON public.profiles (role, status);
-CREATE INDEX idx_profiles_email ON public.profiles (email);
 CREATE INDEX idx_books_category_id ON public.books (category_id);
 CREATE INDEX idx_books_title ON public.books (title);
 CREATE INDEX idx_books_authors ON public.books (authors);
-CREATE INDEX idx_books_isbn ON public.books (isbn);
 CREATE INDEX idx_copies_book_id ON public.copies (book_id);
 CREATE INDEX idx_copies_status ON public.copies (status);
 CREATE INDEX idx_loans_user_id ON public.loans (user_id);
 CREATE INDEX idx_loans_copy_id ON public.loans (copy_id);
 CREATE INDEX idx_loans_status_due_date ON public.loans (status, due_date);
 CREATE INDEX idx_reservations_user_id ON public.reservations (user_id);
-CREATE INDEX idx_reservations_book_id_status ON public.reservations (book_id, status, requested_at);
+CREATE INDEX idx_reservations_book_id_status ON public.reservations (book_id, status, requested_at, queue_sequence);
 CREATE INDEX idx_reservations_copy_id ON public.reservations (copy_id);
 CREATE INDEX idx_sanctions_user_id_status ON public.sanctions (user_id, status);
 CREATE INDEX idx_sanctions_loan_id ON public.sanctions (loan_id);
 
-CREATE UNIQUE INDEX uq_active_loan_per_copy ON public.loans (copy_id) WHERE status = 'active';
+CREATE UNIQUE INDEX uq_active_loan_per_copy ON public.loans (copy_id) WHERE status IN ('active', 'overdue');
 CREATE UNIQUE INDEX uq_active_reservation_per_user_book ON public.reservations (user_id, book_id) WHERE status IN ('pending', 'ready_for_pickup');
+CREATE UNIQUE INDEX uq_ready_reservation_per_copy ON public.reservations (copy_id) WHERE status = 'ready_for_pickup';
 CREATE UNIQUE INDEX uq_active_sanction_per_loan ON public.sanctions (loan_id) WHERE status = 'active';
-
-ALTER TABLE public.loans
-  ADD CONSTRAINT loans_copy_not_reserved_while_active CHECK (
-    status <> 'active' OR NOT EXISTS (
-      SELECT 1
-      FROM public.reservations r
-      WHERE r.copy_id = loans.copy_id
-        AND r.status IN ('pending', 'ready_for_pickup')
-    )
-  );

@@ -1,49 +1,28 @@
 # Progress
 
-## Phase 0 — Audit and repository baseline
+## Database deployment preparation
 
-- Review complete: the repository was empty except for the migration folder scaffolding.
-- Diagnosis: the project is at a foundational stage, with no application code yet, but the migration file structure and system requirements are clear.
-- Status: database-first foundation created and documented.
+- Read and audited the six original SQL migrations.
+- Moved the SQL into timestamped `supabase/migrations/` files; this is the single maintained source of truth.
+- Added PostgreSQL 17 Supabase CLI configuration, an intentionally empty seed file, and pgTAP contract tests.
+- Fixed invalid SQL and tightened table privileges, RLS, RPC authorization, circulation state transitions, and cron timezone checks.
+- Added a deployment audit with findings, exact linking/push commands, and remote-state cautions.
 
-## Phase 1 — Database schema foundation
+## Validation
 
-- Required enums created in the migration sequence.
-- Core tables defined with FK relationships, constraints, and indexing strategy.
-- Status: implemented in SQL migration files.
+- Supabase CLI 3.1.0 is available through `npx`; Docker is installed and its daemon is reachable.
+- Local Supabase 17.11 stack started, clean-replayed all six migrations, passed 40/40 pgTAP checks, and passed `db lint` without warnings.
+- Verified local `cron.timezone` is `GMT` and the daily job is scheduled once at 00:00.
+- No remote project has been linked or changed.
 
-## Phase 2 — Authentication integration
+## Not yet implemented
 
-- Trigger-based profile creation for `auth.users` included.
-- Secure role defaults documented.
-- Status: implemented in migration SQL.
+- React web client.
+- Kotlin/Android client.
+- C# WPF client.
+- Live Supabase project linkage and deployment.
+- Initial admin provisioning on a hosted project.
 
-## Phase 3 — Security model
+## Decision
 
-- RLS enabled across exposed tables.
-- Role-based access control designed to separate member, librarian, and admin permissions.
-- Security documentation drafted in `docs/SECURITY.md`.
-- Status: implemented in migration SQL.
-
-## Phase 4 — Automated business rules
-
-- Delayed return sanction logic included.
-- Reservation dispatch/pickup logic included.
-- Daily maintenance function included.
-- Status: implemented in migration SQL.
-
-## Phase 5 — RPC layer
-
-- Core library operations defined as PostgreSQL functions.
-- These functions are designed to centralize validation and concurrency checks.
-- Status: implemented in migration SQL.
-
-## Phase 6+ — Client application work
-
-- The repository has not yet been populated with web, Android, or desktop client applications.
-- Those can be added after the Supabase schema is applied and the project is connected to a live project instance.
-- Status: deferred until the database foundation is active and validated.
-
-## Current state
-
-The codebase is now organized around the required Supabase-first MVP structure and is ready for a real project setup and database deployment.
+`supabase/migrations/` is the official and only migration source. `database/migrations/` is no longer a second, editable copy.

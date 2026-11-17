@@ -1,23 +1,71 @@
-BiblioFlow — Library Management System
+# BiblioFlow
 
-BiblioFlow is an information system designed to manage library operations. It enables members to browse the catalogue, reserve books, and manage loans, while providing library staff with tools to handle desk checkouts, returns, and collection management.
+BiblioFlow is a Supabase-first library-management project. Its clients are intended to connect directly to Supabase Auth and Postgres; security and circulation rules are enforced in the database, not in an intermediate application backend.
 
-🏗 System Architecture
+## Repository status
 
-The project uses a Serverless Multi-Client Unified-Backend Architecture. All three client platforms connect directly to a single Supabase (PostgreSQL) backend via native SDKs. Security and automated rules are handled at the database level using Row Level Security (RLS) and PostgreSQL functions.
+The database schema, RLS policies, circulation RPCs, and scheduled maintenance migrations are prepared for Supabase CLI. A functional Android shell is now present under `mobile-app/` and is wired to the Supabase schema and member-facing library flows.
 
-Unified Backend: Supabase (PostgreSQL Database, Supabase Auth, RLS Policies, and pg_cron automation).
+## Database source of truth
 
-Mobile App: Native Kotlin app built with Jetpack Compose (MVVM architecture) for library Members.
+`supabase/migrations/` is the only maintained and deployable migration source. The original files formerly under `database/migrations/` were moved into this timestamped directory so that there are no duplicate SQL copies to drift.
 
-Desktop App: Native .NET 8 (C# / WPF) application with DirectX rendering for Librarians at the front desk.
+Migration order:
 
-Web App: Lightweight React.js (Vite) web application for general catalogue access and Administrator reporting.
+1. `20261116164500_create_enums.sql`
+2. `20261116164501_create_tables.sql`
+3. `20261116164502_auth_triggers.sql`
+4. `20261116164503_rls_policies.sql`
+5. `20261116164504_business_logic.sql`
+6. `20261116164505_cron_jobs.sql`
 
-👥 Roles & Features
+`supabase/seed.sql` intentionally contains no sample users or catalog data. SQL contract tests are in `supabase/tests/`.
 
-Member (Mobile / Web): Search the catalogue, view active loans, renew loans, place reservations on unavailable books, and view sanction history.
+## Local development and validation
 
-Librarian (Desktop): Record loans and returns at the front desk, manage physical copies, and monitor overdue items.
+Requirements: Supabase CLI, Docker, and Android Studio / Android SDK.
 
-Administrator (Web / Desktop): Manage user roles, configure system parameters, cancel sanctions, and view system reports.
+```sh
+cd mobile-app
+./gradlew assembleDebug
+```
+
+For the database:
+
+```sh
+npx --yes supabase@3.1.0 start
+npx --yes supabase@3.1.0 test db
+npx --yes supabase@3.1.0 status
+```
+
+The local database is configured for PostgreSQL 17. Local validation does not deploy to or link to a hosted project.
+
+To prepare the Android release build, copy `mobile-app/keystore.properties.example` to `mobile-app/keystore.properties` and fill in official Play signing values before running `./gradlew assembleRelease`.
+
+## Remote deployment
+
+Read [docs/DEPLOYMENT_AUDIT.md](docs/DEPLOYMENT_AUDIT.md) before deployment. Link and inspect the target first; do not push until any existing remote schema and migration history have been reconciled.
+
+```sh
+npx --yes supabase@3.1.0 login
+npx --yes supabase@3.1.0 link --project-ref <PROJECT_REF>
+npx --yes supabase@3.1.0 migration list --remote
+npx --yes supabase@3.1.0 db push --remote --dry-run
+```
+
+Only after reviewing the target, migration diff, and backup/recovery plan:
+
+```sh
+npx --yes supabase@3.1.0 db push --remote
+```
+
+No hosted project is linked or modified by this repository setup.
+
+## Security notes
+
+- Never put a Supabase service-role key in a client app.
+- The `.env.example` file contains names only; supply real client values outside Git.
+- Members cannot directly mutate loans, reservation state, sanctions, or privileged profile fields.
+- Role changes are handled by a database RPC restricted to active admins.
+
+See [docs/SECURITY.md](docs/SECURITY.md) for the database security model and [docs/DEPLOYMENT_AUDIT.md](docs/DEPLOYMENT_AUDIT.md) for findings and deployment prerequisites.

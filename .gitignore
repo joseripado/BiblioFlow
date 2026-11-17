@@ -1,5 +1,8 @@
 .env
 .env.*
 !.env.example
+mobile-app/local.properties
+mobile-app/keystore.properties
+mobile-app/*.jks
 supabase/.branches/
 supabase/.temp/
